@@ -75,7 +75,15 @@ protected:
   double global_override_            ;
   double obj_vel_                    ;
   double dt_move_                    ;
+  double max_solver_time_            ;                // Nermin added
+  double init_duration_offset_       ;                // Nermin added
+  double max_vel_recorded_;                           // Nermin added
+  double max_acc_recorded_;                           // Nermin added
+  std::vector<double> previous_vel_;                  // Nermin added
+  unsigned int num_obstacles_;                        // Nermin added
 
+  ros::WallTime tic_alg_;				// Nermin added
+  ros::WallTime tic_obj_;				// Nermin added
   ros::WallTime tic_trj_;
 
   ReplannerBasePtr                          replanner_                   ;
@@ -96,6 +104,16 @@ protected:
   moveit_msgs::PlanningScene                planning_scene_msg_          ;
   moveit_msgs::PlanningScene                planning_scene_diff_msg_     ;
   moveit_msgs::PlanningScene                planning_scene_msg_benchmark_;
+
+  std::vector<std::string> ids;
+  std::vector<double> moving_time;
+  std::vector<unsigned int> n_move;
+  std::vector<Eigen::Vector3d> velocities;
+  std::vector<Eigen::Vector3d> objects_locations;
+  std::vector<object_loader_msgs::Object> spawned_objects;
+  object_loader_msgs::AddObjects srv_add_object;
+  object_loader_msgs::MoveObjects srv_move_objects;
+  object_loader_msgs::RemoveObjects srv_remove_object;
 
   std::string obj_type_                ;
   std::vector<double> spawn_instants_  ;
@@ -148,6 +166,7 @@ protected:
   virtual void collisionCheckThread();
   virtual void displayThread();
   virtual void benchmarkThread();
+  virtual void addObjects();
   virtual void spawnObjectsThread();
   virtual void trajectoryExecutionThread();
   virtual double readScalingTopics();
@@ -224,6 +243,25 @@ public:
   bool goalReached()
   {
     return goal_reached_;
+  }
+
+  struct InitObstacles
+  {
+    std::vector<Eigen::Vector3d> positions;
+    std::vector<Eigen::Vector3d> dimensions;
+    std::vector<Eigen::Vector3d> velocities;
+    float max_vel;
+  } 
+  init_obstacles_;    // Nermin added
+
+  void setInitObstacles(const InitObstacles &init_obstacles)
+  {
+    init_obstacles_ = init_obstacles;
+  }
+
+  void setInitDurationOffset(double init_duration_offset)
+  {
+    init_duration_offset_ = init_duration_offset;
   }
 
   virtual bool joinThreads();

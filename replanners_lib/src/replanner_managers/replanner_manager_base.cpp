@@ -12,6 +12,9 @@ ReplannerManagerBase::ReplannerManagerBase(const PathPtr &current_path,
   nh_           = nh    ;
 
   replanning_enabled_ = true;
+  max_vel_recorded_ = 0;
+  max_acc_recorded_ = 0; 
+  previous_vel_ = std::vector<double>(current_path->getGoalNode()->getConfiguration().size(), 0);
 
   fromParam();
   subscribeTopicsAndServices();
@@ -105,6 +108,9 @@ void ReplannerManagerBase::fromParam()
     which_link_display_path_ = "";
   if(!nh_.getParam("benchmark",benchmark_))
     benchmark_ = false;
+  if(!nh_.getParam("max_solver_time", max_solver_time_))
+    max_solver_time_ = 10.0;
+
   if(!nh_.getParam("virtual_obj/spawn_objs",spawn_objs_))
     spawn_objs_ = false;
   else
@@ -139,7 +145,7 @@ void ReplannerManagerBase::attributeInitialization()
   goal_reached_                    = false;
   download_scene_info_             = true ;
   current_path_sync_needed_        = false;
-  spline_order_                    = 3    ;
+  spline_order_                    = 2    ;
   replanning_time_                 = 0.0  ;
   scaling_                         = 1.0  ;
   real_time_                       = 0.0  ;
@@ -680,6 +686,7 @@ bool ReplannerManagerBase::run()
   spinner.start();
 
   attributeInitialization();
+  addObjects();
 
   target_pub_         .publish(new_joint_state_         );
   unscaled_target_pub_.publish(new_joint_state_unscaled_);
@@ -719,7 +726,8 @@ double ReplannerManagerBase::readScalingTopics()
 
 void ReplannerManagerBase::trajectoryExecutionThread()
 {
-  double  duration;
+  tic_alg_ = ros::WallTime::now();
+  double duration;
   ros::WallTime tic,toc;
   PathPtr path2project_on;
   Eigen::VectorXd point2project(pnt_.positions.size());
@@ -738,9 +746,14 @@ void ReplannerManagerBase::trajectoryExecutionThread()
     if(read_safe_scaling_)
       scaling_ = scaling_*readScalingTopics();
 
-    real_time_ += dt_;
-    t_+= scaling_*dt_;
+    duration = (ros::WallTime::now() - tic_alg_).toSec();
+    tic_alg_ = ros::WallTime::now();
+    real_time_ += duration;
+    t_+= scaling_ * duration;
+    // real_time_ += dt_;   // Cannot execute in real-time if trj_exec_thread_frequency_ is very high
+    // t_+= scaling_*dt_;
     t_replan_ = t_+time_shift_*scaling_;
+    ROS_INFO("real_time: %f", real_time_);
 
     interpolator_.interpolate(ros::Duration(t_),pnt_         ,scaling_           );
     interpolator_.interpolate(ros::Duration(t_),pnt_unscaled_,scaling_from_param_);
@@ -775,6 +788,35 @@ void ReplannerManagerBase::trajectoryExecutionThread()
 
     target_pub_         .publish(new_joint_state_)         ;
     unscaled_target_pub_.publish(new_joint_state_unscaled_);
+
+    // ROS_INFO("Nermin publishes configuration: ");
+    for (int i = 0; i < pnt_.velocities.size(); i++)
+    {
+      // std::cout << pnt_.positions[i] << "\t";
+      // std::cout << pnt_.velocities[i] << "\t";
+      if (pnt_.velocities[i] > max_vel_recorded_)
+        max_vel_recorded_ = pnt_.velocities[i];
+
+      double acc = std::abs(pnt_.velocities[i] - previous_vel_[i]) / duration;
+      // std::cout << "acc: " << acc << "\t";
+      if (acc > max_acc_recorded_)
+        max_acc_recorded_ = acc;
+    }
+    // std::cout << "\n";
+    previous_vel_ = pnt_.velocities;
+
+    // std::ofstream file;
+    // file.open("/home/spear/.ros/replanners_benchmark/6d/MARS/configs.log", std::ofstream::app);
+    // file << "time in [s]:\n";
+    // file << ros::Time::now() << "\n";
+    // file << "position:\n";
+    // file << pnt_.positions[0] << "\t" << pnt_.positions[1] << "\t" << pnt_.positions[2] << "\t"
+    //      << pnt_.positions[3] << "\t" << pnt_.positions[4] << "\t" << pnt_.positions[5] << "\n";
+    // file << "velocity:\n";
+    // file << pnt_.velocities[0] << "\t" << pnt_.velocities[1] << "\t" << pnt_.velocities[2] << "\t"
+    //      << pnt_.velocities[3] << "\t" << pnt_.velocities[4] << "\t" << pnt_.velocities[5] << "\n";
+    // file << "----------------------------------------------------------------------------------\n";
+    // file.close();
 
     toc = ros::WallTime::now();
     duration = (toc-tic).toSec();
@@ -886,120 +928,163 @@ void ReplannerManagerBase::displayThread()
   ROS_BOLDCYAN_STREAM("Display thread is over");
 }
 
-void ReplannerManagerBase::spawnObjectsThread()
+void ReplannerManagerBase::addObjects()
 {
-  object_loader_msgs::AddObjects srv_add_object;
-  object_loader_msgs::MoveObjects srv_move_objects;
-  object_loader_msgs::RemoveObjects srv_remove_object;
-
-  CollisionCheckerPtr checker = checker_cc_->clone();
-  planning_scene::PlanningScenePtr planning_scene = planning_scene::PlanningScene::clone(planning_scn_cc_);
-
-  MoveitUtils moveit_utils(planning_scene,group_name_);
-  std::string last_link = planning_scene->getRobotModel()->getJointModelGroup(group_name_)->getLinkModelNames().back();
-
-  PathPtr current_path;
-  Eigen::VectorXd obj_conf, replan_conf;
-  Eigen::VectorXd goal_conf = current_path_shared_->getGoalNode()->getConfiguration();
-
-  Eigen::Vector3d replan_pose, obj_pose;
-  Eigen::Vector3d goal_pose = forwardIk(goal_conf,last_link,moveit_utils);
-
-  std::vector<std::string> ids;
-  std::vector<double> moving_time;
-  std::vector<unsigned int> n_move;
-  std::vector<Eigen::Vector3d> velocities;
-  std::vector<Eigen::Vector3d> objects_locations;
-  std::vector<object_loader_msgs::Object> spawned_objects;
-
-  bool obs_update;
+  num_obstacles_ = spawn_instants_.size();
+  ROS_INFO("Num of obstacles: %ld", num_obstacles_);
 
   geometry_msgs::Quaternion q;
   q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
-
-  std::random_device rseed;
-  std::mt19937 gen(rseed());
-  std::uniform_real_distribution<double> random_vel(-1.0,1.0);
-  std::uniform_real_distribution<double> random_abs(0.2,0.8);
 
   object_loader_msgs::Object new_obj;
   new_obj.object_type = obj_type_;
   new_obj.pose.header.frame_id = "world";
   new_obj.pose.pose.orientation = q;
 
-  std::reverse(spawn_instants_.begin(),spawn_instants_.end());
-  ros::WallRate lp(100);
+  for (size_t i = 0; i < num_obstacles_; i++)
+  {
+    srv_add_object.request.objects.clear();
+
+    new_obj.pose.pose.position.x = init_obstacles_.positions[i].x();
+    new_obj.pose.pose.position.y = init_obstacles_.positions[i].y();
+    new_obj.pose.pose.position.z = init_obstacles_.positions[i].z();
+
+    srv_add_object.request.objects.push_back(new_obj);
+
+    if(not srv_add_object.request.objects.empty())
+    {
+      if(not add_obj_.call(srv_add_object))
+      {
+        ROS_ERROR("call to add obj srv not ok");
+
+        stop_ = true;
+        break;
+      }
+
+      if(not srv_add_object.response.success)
+        ROS_ERROR("add obj srv error");
+      else
+      {
+        ROS_BOLDMAGENTA_STREAM("Obstacle spawned!");
+        n_move.push_back(0);
+        velocities.push_back(init_obstacles_.velocities[i]);
+        moving_time.push_back(real_time_);
+        spawned_objects.push_back(new_obj);
+        objects_locations.push_back(init_obstacles_.positions[i]);
+        ids.push_back(srv_add_object.response.ids.front());
+
+        for (const std::string& str:srv_add_object.response.ids)
+          srv_remove_object.request.obj_ids.push_back(str);
+      }
+
+      geometry_msgs::PoseArray pose_array;
+      pose_array.header.frame_id = "world";
+      pose_array.header.stamp = ros::Time::now();
+
+      geometry_msgs::Pose pose;
+      pose.orientation = q;
+
+      bench_mtx_.lock();
+      obj_ids_ = ids;  //also contains the new added obj
+
+      obj_pos_.clear();
+      for(const Eigen::Vector3d &ol: objects_locations) //also contains the new added obj
+      {
+        Eigen::VectorXd vector = ol.head<3>();
+        obj_pos_.push_back(vector);
+
+        pose.position.x = ol[0];
+        pose.position.y = ol[1];
+        pose.position.z = ol[2];
+
+        pose_array.poses.push_back(pose);
+      }
+      bench_mtx_.unlock();
+
+      obj_pose_pub_.publish(pose_array); //publish poses for SSM node
+    }
+    ros::Duration(0.01).sleep();
+  }
+}
+
+void ReplannerManagerBase::spawnObjectsThread()
+{
+  Eigen::Vector3d WS_center = Eigen::Vector3d(0.0, 0.0, 0.267);
+  double WS_radius = 1.5;
+  double robot_max_vel = 3.14159;
+  double base_radius = 0.047;
+
+  bool obs_update;
+
+  geometry_msgs::Quaternion q;
+  q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
+
+  object_loader_msgs::Object new_obj;
+  new_obj.object_type = obj_type_;
+  new_obj.pose.header.frame_id = "world";
+  new_obj.pose.pose.orientation = q;
+
+  ros::WallRate lp(1/dt_move_);
 
   while(not stop_ && ros::ok())
   {
     obs_update = false;
 
-    srv_add_object.request.objects.clear();
     srv_move_objects.request.poses.clear();
     srv_move_objects.request.obj_ids.clear();
 
-    if(not spawn_instants_.empty())
+    if(not objects_locations.empty())
     {
-      if(real_time_>=spawn_instants_.back())
+      float delta_time = (ros::WallTime::now() - tic_obj_).toSec();
+      tic_obj_ = ros::WallTime::now();
+      // ROS_INFO("delta_time: %f", delta_time);
+      
+      for(unsigned int i=0; i<objects_locations.size(); i++)
       {
-        spawn_instants_.pop_back();
-
-        replanner_mtx_.lock();
-        paths_mtx_.lock();
-
-        current_path = current_path_shared_->clone();
-        replan_conf = configuration_replan_;
-
-        paths_mtx_.unlock();
-        replanner_mtx_.unlock();
-
-        current_path->setChecker(checker);
-        current_path = current_path->getSubpathFromConf(replan_conf,true);
-
-        replan_pose = forwardIk(replan_conf,last_link,moveit_utils);
-
-        double obj_abscissa = 0.0;
-        while(not stop_ && ros::ok())
+        if(real_time_>(moving_time.at(i)+delta_time))
         {
-          obj_abscissa = random_abs(gen); //0.2~0.8
-
-          obj_conf = current_path->pointOnCurvilinearAbscissa(obj_abscissa);
-          obj_pose = forwardIk(obj_conf,last_link,moveit_utils);
-
-          // to no collide with the robot or the goal
-          if((obj_pose-replan_pose).norm()>obj_max_size_ && (obj_conf-replan_conf).norm()>obj_max_size_ &&
-             (obj_pose-goal_pose  ).norm()>obj_max_size_ && (obj_conf-goal_conf  ).norm()>obj_max_size_  )
-            break;
-        }
-
-        new_obj.pose.pose.position.x = obj_pose[0];
-        new_obj.pose.pose.position.y = obj_pose[1];
-        new_obj.pose.pose.position.z = obj_pose[2];
-
-        srv_add_object.request.objects.push_back(new_obj);
-
-        if(stop_ || not ros::ok())
-          break;
-      }
-    }
-
-    if(not objects_locations.empty() && obj_vel_>0.0)
-    {
-      for(unsigned int i=0;i<objects_locations.size();i++)
-      {
-        if(real_time_>(moving_time.at(i)+dt_move_))
-        {
-          if(n_move.at(i)>direction_change_) //change direction of motion
+          // Nermin added to reflect random obstacles according to the principle of light reflecting
+          // ROS_INFO("Moving obstacle: %ld", i);
+          float tol_radius = std::max(velocities.at(i).norm() / robot_max_vel, base_radius);
+          Eigen::Vector3d pos_next = objects_locations.at(i) + delta_time * velocities.at(i);
+          Eigen::Vector3d vec_normal;
+          bool change = true;
+          
+          if (pos_next.z() < 0)
+            vec_normal << 0, 0, 1;
+          else if ((pos_next - WS_center).norm() > WS_radius)
+            vec_normal << -pos_next.x(), -pos_next.y(), -(pos_next.z() - WS_center.z());
+          else if (pos_next.head(2).norm() < tol_radius && pos_next.z() < WS_center.z())
+            vec_normal << pos_next.x(), pos_next.y(), 0;
+          else if ((pos_next - WS_center).norm() < tol_radius)
+            vec_normal << pos_next.x(), pos_next.y(), pos_next.z() - WS_center.z();
+          else
           {
-            Eigen::Vector3d v;
-            v << (random_vel(gen)),(random_vel(gen)),(random_vel(gen));
-            v = (v/v.norm())*obj_vel_;
-
-            velocities.at(i) = v;
-            n_move.at(i) = 0;
+            objects_locations.at(i) = pos_next;
+            change = false;
           }
 
-          objects_locations.at(i) = objects_locations.at(i) + dt_move_*velocities.at(i);
+          if (change)
+          {
+            float t_param = (pos_next - objects_locations.at(i)).dot(vec_normal) / vec_normal.squaredNorm();
+            objects_locations.at(i) = 2*pos_next - objects_locations.at(i) - 2*t_param * vec_normal;
+            velocities.at(i) = (objects_locations.at(i) - pos_next) / delta_time;
+          }
+
+          // -------------------------------------------------------------------------------------------------------- //
+
+          // Nermin added. Circular motion (for scenario 1) 
+          // ROS_INFO("Moving obstacle: %ld", i);
+          // float radius = objects_locations.at(i).head(2).norm();
+          // float delta_phi = init_obstacles_.max_vel / radius * delta_time;
+          // float phi = std::atan2(objects_locations.at(i).y(), objects_locations.at(i).x());
+          // Eigen::Vector3d pos_prev = objects_locations.at(i);
+          // objects_locations.at(i).x() = radius * std::cos(phi + delta_phi);
+          // objects_locations.at(i).y() = radius * std::sin(phi + delta_phi);
+          // velocities.at(i) = (objects_locations.at(i) - pos_prev) / delta_time;
+          
+          // -------------------------------------------------------------------------------------------------------- //
+
           spawned_objects.at(i).pose.pose.position.x = objects_locations.at(i)[0];
           spawned_objects.at(i).pose.pose.position.y = objects_locations.at(i)[1];
           spawned_objects.at(i).pose.pose.position.z = objects_locations.at(i)[2];
@@ -1018,39 +1103,6 @@ void ReplannerManagerBase::spawnObjectsThread()
 
       if(stop_ || not ros::ok())
         break;
-    }
-
-    if(not srv_add_object.request.objects.empty())
-    {
-      if(not add_obj_.call(srv_add_object))
-      {
-        ROS_ERROR("call to add obj srv not ok");
-
-        stop_ = true;
-        break;
-      }
-
-      if(not srv_add_object.response.success)
-        ROS_ERROR("add obj srv error");
-      else
-      {
-        ROS_BOLDMAGENTA_STREAM("Obstacle spawned!");
-        obs_update = true;
-
-        Eigen::Vector3d v;
-        v << (random_vel(gen)),(random_vel(gen)),(random_vel(gen));
-        v = (v/v.norm())*obj_vel_;
-
-        n_move.push_back(0);
-        velocities.push_back(v);
-        moving_time.push_back(real_time_);
-        spawned_objects.push_back(new_obj);
-        objects_locations.push_back(obj_pose);
-        ids.push_back(srv_add_object.response.ids.front());
-
-        for (const std::string& str:srv_add_object.response.ids)
-          srv_remove_object.request.obj_ids.push_back(str);
-      }
     }
 
     if(not srv_move_objects.request.poses.empty())
@@ -1194,6 +1246,9 @@ void ReplannerManagerBase::benchmarkThread()
 
     for(unsigned int i=0; i<pnt.positions.size();i++)
       pnt_conf(i) = pnt.positions[i];
+    
+    // ROS_INFO("Nermin in benchmark thread");
+    std::cout << "current conf: " << pnt_conf.transpose() << "\n";
 
     /* Replanning time */
     bench_mtx_.lock();
@@ -1205,13 +1260,7 @@ void ReplannerManagerBase::benchmarkThread()
 
     /* Path length */
     distance = (pnt_conf-old_pnt_conf).norm();
-    if(distance>0.3)
-    {
-      //current_configuration = old_current_configuration;
-      ROS_BOLDRED_STREAM("Skipping path length increment! Distance: "<<distance);
-    }
-    else
-      path_length += distance;
+    path_length += distance;
 
     /* Collisions with mobile obstacles */
     bench_mtx_.lock();
@@ -1219,9 +1268,9 @@ void ReplannerManagerBase::benchmarkThread()
     obj_pos = obj_pos_;
     bench_mtx_.unlock();
 
-    for(unsigned int i=0;i<obj_pos.size();i++)
+    for(unsigned int i=0; i<obj_pos.size(); i++)
     {
-      if((current_configuration_3d-obj_pos[i]).norm()<obj_max_size_ && ((goal_3d-obj_pos[i]).norm()>obj_max_size_))
+      if((current_configuration_3d-obj_pos[i]).norm()<obj_max_size_)
       {
         it = std::find(already_collided_obj.begin(),already_collided_obj.end(),obj_ids[i]);
         if(it>=already_collided_obj.end())
@@ -1234,8 +1283,8 @@ void ReplannerManagerBase::benchmarkThread()
           {
             current_conn = current_path->findConnection(current_configuration);
 
-            if(current_conn && (current_conn->getCost() != std::numeric_limits<double>::infinity()))
-              throw std::runtime_error("current conn cost should be infinite! ");
+            // if(current_conn && (current_conn->getCost() != std::numeric_limits<double>::infinity()))
+            //   throw std::runtime_error("current conn cost should be infinite! ");
 
             n_collisions++;
             already_collided_obj.push_back(obj_ids[i]);
@@ -1251,6 +1300,27 @@ void ReplannerManagerBase::benchmarkThread()
         }
       }
     }
+
+    // for(unsigned int i=0; i<num_obstacles_; i++)
+    // {
+    //   scene_mtx_.lock();
+    //   checker->setPlanningSceneMsg(planning_scene_msg_benchmark_);
+    //   scene_mtx_.unlock();
+      
+    //   if(!checker->check(current_configuration)) //Did replanner know about this obstacle? If check(current_configuration) is false, replanner knew the obstacle
+    //   {
+    //     ROS_ERROR("Collision occurred!!!");
+    //     n_collisions++;
+    //     success = false;
+
+    //     text = "Success: FALSE \nCollided objects: "+std::to_string(n_collisions);
+    //     overlayed_text.text = text;
+    //     overlayed_text.fg_color = fg_color_red;
+    //     text_overlay_pub_.publish(overlayed_text);
+
+    //     break;
+    //   }
+    // }
 
     toc = ros::WallTime::now();
     cycle_duration = (toc-tic).toSec();
@@ -1275,21 +1345,17 @@ void ReplannerManagerBase::benchmarkThread()
   else
     max_replanning_time = 0.0;
 
-  bench_mtx_.lock();
-  unsigned int number_of_objects = obj_ids_.size();
-  bench_mtx_.unlock();
-
   std::string replanner_type = "replanner";
   nh_.getParam("replanner_type",replanner_type);
 
-  std::string test_name = "test";
-  nh_.getParam("test_name",test_name);
+  std::string test_name = "test_" + std::to_string(num_obstacles_);
+  // nh_.getParam("test_name",test_name);
 
   std::string bench_name = "bench";
   nh_.getParam("bench_name",bench_name);
 
   std::string path = "./replanners_benchmark";
-  std::string file_name = path+"/"+bench_name+"/"+replanner_type+"/"+test_name+".bin";
+  std::string file_name = path+"/"+bench_name+"/"+replanner_type+"/"+test_name+".log";
 
   boost::filesystem::path dir(path);
   if(not (boost::filesystem::exists(dir)))
@@ -1303,31 +1369,31 @@ void ReplannerManagerBase::benchmarkThread()
   if(not (boost::filesystem::exists(dir3)))
     boost::filesystem::create_directory(dir3);
 
+  // Nermin added:
+  if (real_time_ + init_duration_offset_ > max_solver_time_)
+    success = false;
+
   std::ofstream file;
-  file.open(file_name,std::ios::out | std::ios::binary);
+  file.open(file_name, std::ofstream::app);
+  file << "success:\n" << success << "\n";
+  if (success)
+  {
+    file << "path length [rad]:\n" << path_length << "\n";
+    file << "time for initial paths [s]:\n" << init_duration_offset_ << "\n";
+    file << "time for algorithm [s]:\n" << real_time_ << "\n";
+    file << "max vel [rad/s]:\n" << max_vel_recorded_ << "\n";
+    file << "max acc [rad/s^2]:\n" << max_acc_recorded_ << "\n";
+  }
+  else if (real_time_ + init_duration_offset_ > max_solver_time_)
+    file << "Reason: Maximal planning time exceeded!\n";
+  else
+    file << "Reason: Collision occurred!\n";
 
-  const size_t bufsize = 1024 * 1024;
-  std::unique_ptr<char[]> buf;
-  buf.reset(new char[bufsize]);
-
-  file.rdbuf()->pubsetbuf(buf.get(), bufsize);
-
-  file.write((char*) &success,             sizeof(success            ));
-  file.write((char*) &number_of_objects,   sizeof(number_of_objects  ));
-  file.write((char*) &n_collisions,        sizeof(n_collisions       ));
-  file.write((char*) &path_length,         sizeof(path_length        ));
-  file.write((char*) &distance_start_goal, sizeof(distance_start_goal));
-  file.write((char*) &initial_path_length, sizeof(initial_path_length));
-  file.write((char*) &real_time_,          sizeof(real_time_         ));
-  file.write((char*) &mean,                sizeof(mean               ));
-  file.write((char*) &std_dev,             sizeof(std_dev            ));
-  file.write((char*) &max_replanning_time, sizeof(max_replanning_time));
-
-  file.flush();
+  file << "----------------------------------------------------\n";
   file.close();
 
   ROS_BOLDBLUE_STREAM("\nFile "<<file_name<<" saved!\n* success: "<<success
-                      <<"\n* number_of_objects: "<<number_of_objects
+                      <<"\n* number_of_objects: "<<num_obstacles_
                       <<"\n* number_of_collisions: "<<n_collisions
                       <<"\n* path length: "<<path_length
                       <<"\n* distance start-goal: "<<distance_start_goal
@@ -1337,10 +1403,7 @@ void ReplannerManagerBase::benchmarkThread()
                       <<"\n* replanning time std dev: "<<std_dev
                       <<"\n* max replanning time: "<<max_replanning_time);
 
-  if(n_collisions == 0 && not success)
-    throw std::runtime_error("no collisions but success false!");
-
-  ROS_BOLDCYAN_STREAM("Benchamrk thread is over");
+  ROS_BOLDCYAN_STREAM("Benchmark thread is over");
 }
 
 Eigen::Vector3d ReplannerManagerBase::forwardIk(const Eigen::VectorXd& conf, const std::string& last_link, const MoveitUtils& util)

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+  <include file="$(find replanners_bench_cells)/launch/load_cell_xarm6.launch"/>
+
+  <rosparam command="load" file="$(find replanners_benchmark)/config/replanners_bench_xarm6.yaml"/>
+
+  <node pkg="replanners_benchmark"
+        name="replanners_benchmark_random"
+        type="replanners_benchmark_random"
+        output="screen"
+        launch-prefix="gdb -ex run --args">
+  </node>
+
+</launch>

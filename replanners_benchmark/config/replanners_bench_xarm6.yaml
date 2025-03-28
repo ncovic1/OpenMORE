@@ -1,0 +1,62 @@
+#TEST CONFIGURATIONS:
+n_query_start: 0
+n_query: 100
+n_iter_per_query: 1
+bench_name: "6d"
+num_obstacles: [10] #[0,1,2,3,4,5,6,7,8,9,10,20,30,40,50]
+
+#PLANNING CONFIGURATIONS:
+group_name: "xarm6"
+utopia_tolerance: 0.05
+extend: false
+max_distance: 0.1
+checker_resolution: 0.05
+parallel_checker_n_threads: 20
+max_solver_time: 10
+
+#REPLANNER CONFIGURATIONS:
+
+# Available replanners:
+# - MPRRT
+# - DRRTStar
+# - DRRT
+# - anytimeDRRT
+# - MARS
+
+replanner_type_vector: ["MARS"]
+dt_replan: 0.200
+trj_execution_thread_frequency: 500
+collision_checker_thread_frequency: 30
+benchmark: true
+scaling: 0.5
+read_safe_scaling: false
+joint_target_topic: "/joint_target"
+unscaled_joint_target_topic: "/unscaled_joint_target"
+virtual_obj:
+  spawn_objs: true
+  obj_type: "random_box"
+  obj_max_size: 0.05
+  # obj_type: "big_box"
+  # obj_max_size: 0.25
+  dt_move: 0.005
+  obs_pose_topic: "/poses"
+
+MPRRT:
+  n_threads_replan: 5
+
+MARS:
+  n_other_paths: 2
+  reverse_start_nodes: true
+  full_net_search: false
+  dt_replan_relaxed: 0.200
+  verbosity_level: 2
+  display_other_paths: false
+
+#VERBOSITY:
+replanner_verbosity: false
+display_timing_warning: false
+display_replanning_success: true
+display_replan_trj_point: false
+display_replan_config: true
+display_current_trj_point: false
+display_current_config: true
