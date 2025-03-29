@@ -35,7 +35,7 @@ unscaled_joint_target_topic: "/unscaled_joint_target"
 virtual_obj:
   spawn_objs: true
   obj_type: "random_box"
-  obj_max_size: 0.05
+  obj_max_size: 0.5
   # obj_type: "big_box"
   # obj_max_size: 0.25
   dt_move: 0.005

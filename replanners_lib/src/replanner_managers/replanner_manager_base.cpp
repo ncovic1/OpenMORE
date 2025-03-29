@@ -1301,27 +1301,6 @@ void ReplannerManagerBase::benchmarkThread()
       }
     }
 
-    // for(unsigned int i=0; i<num_obstacles_; i++)
-    // {
-    //   scene_mtx_.lock();
-    //   checker->setPlanningSceneMsg(planning_scene_msg_benchmark_);
-    //   scene_mtx_.unlock();
-      
-    //   if(!checker->check(current_configuration)) //Did replanner know about this obstacle? If check(current_configuration) is false, replanner knew the obstacle
-    //   {
-    //     ROS_ERROR("Collision occurred!!!");
-    //     n_collisions++;
-    //     success = false;
-
-    //     text = "Success: FALSE \nCollided objects: "+std::to_string(n_collisions);
-    //     overlayed_text.text = text;
-    //     overlayed_text.fg_color = fg_color_red;
-    //     text_overlay_pub_.publish(overlayed_text);
-
-    //     break;
-    //   }
-    // }
-
     toc = ros::WallTime::now();
     cycle_duration = (toc-tic).toSec();
     if(cycle_duration>(1/freq) && display_timing_warning_)
