@@ -63,7 +63,7 @@ protected:
   double t_                          ;
   double dt_                         ;
   double real_time_                  ;
-  double obj_max_size_               ;
+  double max_ws_dist_                ;
   double time_shift_                 ;
   double t_replan_                   ;
   double replanning_time_            ;
@@ -115,7 +115,7 @@ protected:
   object_loader_msgs::MoveObjects srv_move_objects;
   object_loader_msgs::RemoveObjects srv_remove_object;
 
-  std::string obj_type_                ;
+  std::vector<std::string> obj_type_   ;
   std::vector<double> spawn_instants_  ;
   std::vector<std::string> obj_ids_    ;
   std::vector<Eigen::VectorXd> obj_pos_;

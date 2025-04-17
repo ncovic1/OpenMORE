@@ -120,10 +120,10 @@ void ReplannerManagerBase::fromParam()
       spawn_instants_.push_back(0.5);
 
     if(!nh_.getParam("virtual_obj/obj_type",obj_type_))
-      obj_type_ = "little_box";
+      obj_type_ = {"little_box"};
 
-    if(!nh_.getParam("virtual_obj/obj_max_size",obj_max_size_))
-      obj_max_size_ = 0.07;
+    if(!nh_.getParam("virtual_obj/max_ws_dist",max_ws_dist_))
+      max_ws_dist_ = 0.07;
 
     if(!nh_.getParam("virtual_obj/obj_vel",obj_vel_))
       obj_vel_ = 0.0;
@@ -937,7 +937,6 @@ void ReplannerManagerBase::addObjects()
   q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
 
   object_loader_msgs::Object new_obj;
-  new_obj.object_type = obj_type_;
   new_obj.pose.header.frame_id = "world";
   new_obj.pose.pose.orientation = q;
 
@@ -945,6 +944,11 @@ void ReplannerManagerBase::addObjects()
   {
     srv_add_object.request.objects.clear();
 
+    if (obj_type_.size() > 1)
+      new_obj.object_type = obj_type_[i];
+    else
+      new_obj.object_type = obj_type_.front();
+    
     new_obj.pose.pose.position.x = init_obstacles_.positions[i].x();
     new_obj.pose.pose.position.y = init_obstacles_.positions[i].y();
     new_obj.pose.pose.position.z = init_obstacles_.positions[i].z();
@@ -1013,16 +1017,13 @@ void ReplannerManagerBase::spawnObjectsThread()
   double WS_radius = 1.5;
   double robot_max_vel = 3.14159;
   double base_radius = 0.047;
-
+  Eigen::VectorXi sign = Eigen::VectorXi::Ones(num_obstacles_);
+  Eigen::VectorXd path_len = Eigen::VectorXd::Zero(num_obstacles_);
+  const float path_len_max { 0.2 };
   bool obs_update;
 
   geometry_msgs::Quaternion q;
   q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
-
-  object_loader_msgs::Object new_obj;
-  new_obj.object_type = obj_type_;
-  new_obj.pose.header.frame_id = "world";
-  new_obj.pose.pose.orientation = q;
 
   ros::WallRate lp(1/dt_move_);
 
@@ -1033,72 +1034,84 @@ void ReplannerManagerBase::spawnObjectsThread()
     srv_move_objects.request.poses.clear();
     srv_move_objects.request.obj_ids.clear();
 
-    if(not objects_locations.empty())
+    float delta_time = (ros::WallTime::now() - tic_obj_).toSec();
+    tic_obj_ = ros::WallTime::now();
+    // ROS_INFO("delta_time: %f", delta_time);
+    
+    for(unsigned int i = 0; i < num_obstacles_; i++)
     {
-      float delta_time = (ros::WallTime::now() - tic_obj_).toSec();
-      tic_obj_ = ros::WallTime::now();
-      // ROS_INFO("delta_time: %f", delta_time);
-      
-      for(unsigned int i=0; i<objects_locations.size(); i++)
+      if(real_time_ > moving_time.at(i) + delta_time)
       {
-        if(real_time_>(moving_time.at(i)+delta_time))
+        // Nermin added to reflect random obstacles according to the principle of light reflecting
+        // ROS_INFO("Moving obstacle: %ld", i);
+        float tol_radius = std::max(velocities.at(i).norm() / robot_max_vel, base_radius);
+        Eigen::Vector3d pos_next = objects_locations.at(i) + delta_time * velocities.at(i);
+        Eigen::Vector3d vec_normal;
+        bool change = true;
+        
+        if (pos_next.z() < 0)
+          vec_normal << 0, 0, 1;
+        else if ((pos_next - WS_center).norm() > WS_radius)
+          vec_normal << -pos_next.x(), -pos_next.y(), -(pos_next.z() - WS_center.z());
+        else if (pos_next.head(2).norm() < tol_radius && pos_next.z() < WS_center.z())
+          vec_normal << pos_next.x(), pos_next.y(), 0;
+        else if ((pos_next - WS_center).norm() < tol_radius)
+          vec_normal << pos_next.x(), pos_next.y(), pos_next.z() - WS_center.z();
+        else
         {
-          // Nermin added to reflect random obstacles according to the principle of light reflecting
-          // ROS_INFO("Moving obstacle: %ld", i);
-          float tol_radius = std::max(velocities.at(i).norm() / robot_max_vel, base_radius);
-          Eigen::Vector3d pos_next = objects_locations.at(i) + delta_time * velocities.at(i);
-          Eigen::Vector3d vec_normal;
-          bool change = true;
-          
-          if (pos_next.z() < 0)
-            vec_normal << 0, 0, 1;
-          else if ((pos_next - WS_center).norm() > WS_radius)
-            vec_normal << -pos_next.x(), -pos_next.y(), -(pos_next.z() - WS_center.z());
-          else if (pos_next.head(2).norm() < tol_radius && pos_next.z() < WS_center.z())
-            vec_normal << pos_next.x(), pos_next.y(), 0;
-          else if ((pos_next - WS_center).norm() < tol_radius)
-            vec_normal << pos_next.x(), pos_next.y(), pos_next.z() - WS_center.z();
-          else
-          {
-            objects_locations.at(i) = pos_next;
-            change = false;
-          }
-
-          if (change)
-          {
-            float t_param = (pos_next - objects_locations.at(i)).dot(vec_normal) / vec_normal.squaredNorm();
-            objects_locations.at(i) = 2*pos_next - objects_locations.at(i) - 2*t_param * vec_normal;
-            velocities.at(i) = (objects_locations.at(i) - pos_next) / delta_time;
-          }
-
-          // -------------------------------------------------------------------------------------------------------- //
-
-          // Nermin added. Circular motion (for scenario 1) 
-          // ROS_INFO("Moving obstacle: %ld", i);
-          // float radius = objects_locations.at(i).head(2).norm();
-          // float delta_phi = init_obstacles_.max_vel / radius * delta_time;
-          // float phi = std::atan2(objects_locations.at(i).y(), objects_locations.at(i).x());
-          // Eigen::Vector3d pos_prev = objects_locations.at(i);
-          // objects_locations.at(i).x() = radius * std::cos(phi + delta_phi);
-          // objects_locations.at(i).y() = radius * std::sin(phi + delta_phi);
-          // velocities.at(i) = (objects_locations.at(i) - pos_prev) / delta_time;
-          
-          // -------------------------------------------------------------------------------------------------------- //
-
-          spawned_objects.at(i).pose.pose.position.x = objects_locations.at(i)[0];
-          spawned_objects.at(i).pose.pose.position.y = objects_locations.at(i)[1];
-          spawned_objects.at(i).pose.pose.position.z = objects_locations.at(i)[2];
-          spawned_objects.at(i).pose.pose.orientation = q;
-
-          n_move.at(i) = n_move.at(i)+1;
-          moving_time.at(i) = real_time_;
-
-          srv_move_objects.request.obj_ids.push_back(ids.at(i));
-          srv_move_objects.request.poses.push_back(spawned_objects.at(i).pose);
+          objects_locations.at(i) = pos_next;
+          change = false;
         }
 
-        if(stop_ || not ros::ok())
-          break;
+        if (change)
+        {
+          float t_param = (pos_next - objects_locations.at(i)).dot(vec_normal) / vec_normal.squaredNorm();
+          objects_locations.at(i) = 2*pos_next - objects_locations.at(i) - 2*t_param * vec_normal;
+          velocities.at(i) = (objects_locations.at(i) - pos_next) / delta_time;
+        }
+
+        // -------------------------------------------------------------------------------------------------------- //
+
+        // Nermin added. Circular motion (for scenario 1) 
+        // ROS_INFO("Moving obstacle: %ld", i);
+        // float radius = objects_locations.at(i).head(2).norm();
+        // float delta_phi = init_obstacles_.max_vel / radius * delta_time;
+        // float phi = std::atan2(objects_locations.at(i).y(), objects_locations.at(i).x());
+        // Eigen::Vector3d pos_prev = objects_locations.at(i);
+        // objects_locations.at(i).x() = radius * std::cos(phi + delta_phi);
+        // objects_locations.at(i).y() = radius * std::sin(phi + delta_phi);
+        // velocities.at(i) = (objects_locations.at(i) - pos_prev) / delta_time;
+        
+        // -------------------------------------------------------------------------------------------------------- //
+
+        // Nermin added. Tunnel motion (for scenario 2) 
+        // ROS_INFO("Moving obstacle: %ld", i);
+        // if (path_len(i) > path_len_max)
+        // {
+        //   sign(i) *= -1;
+        //   path_len(i) = -path_len_max;
+        // }
+        
+        // if (objects_locations.at(i).y() > 0)
+        //   velocities.at(i) = Eigen::Vector3d::UnitX() * sign(i) * init_obstacles_.max_vel;     // Move along x-axis
+        // else
+        //   velocities.at(i) = Eigen::Vector3d::UnitY() * sign(i) * init_obstacles_.max_vel;     // Move along y-axis
+
+        // path_len(i) += velocities.at(i).norm() * delta_time;
+        // objects_locations.at(i) += velocities.at(i) * delta_time;
+
+        // -------------------------------------------------------------------------------------------------------- //
+
+        spawned_objects.at(i).pose.pose.position.x = objects_locations.at(i)[0];
+        spawned_objects.at(i).pose.pose.position.y = objects_locations.at(i)[1];
+        spawned_objects.at(i).pose.pose.position.z = objects_locations.at(i)[2];
+        spawned_objects.at(i).pose.pose.orientation = q;
+
+        n_move.at(i) = n_move.at(i)+1;
+        moving_time.at(i) = real_time_;
+
+        srv_move_objects.request.obj_ids.push_back(ids.at(i));
+        srv_move_objects.request.poses.push_back(spawned_objects.at(i).pose);
       }
 
       if(stop_ || not ros::ok())
@@ -1268,9 +1281,9 @@ void ReplannerManagerBase::benchmarkThread()
     obj_pos = obj_pos_;
     bench_mtx_.unlock();
 
-    for(unsigned int i=0; i<obj_pos.size(); i++)
+    for(unsigned int i = 0; i < obj_pos.size(); i++)
     {
-      if((current_configuration_3d-obj_pos[i]).norm()<obj_max_size_)
+      if((current_configuration_3d - obj_pos[i]).norm() < max_ws_dist_)
       {
         it = std::find(already_collided_obj.begin(),already_collided_obj.end(),obj_ids[i]);
         if(it>=already_collided_obj.end())

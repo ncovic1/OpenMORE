@@ -201,12 +201,18 @@ int main(int argc, char **argv)
       srv_add_object.request.objects.clear();
       srv_remove_object.request.obj_ids.clear();
 
+      std::vector<std::string> object_type_vector;
+      nh.getParam("virtual_obj/obj_type", object_type_vector);
       object_loader_msgs::Object new_obj;
-      nh.getParam("virtual_obj/obj_type", new_obj.object_type);
       new_obj.pose.header.frame_id = "world";
       new_obj.pose.pose.orientation = q;
       for (size_t ii = 0; ii < num_obs; ii++)
       {
+        if (object_type_vector.size() > 1)
+          new_obj.object_type = object_type_vector[ii];
+        else
+          new_obj.object_type = object_type_vector.front();
+
         new_obj.pose.pose.position.x = init_obstacles.positions[ii].x();
         new_obj.pose.pose.position.y = init_obstacles.positions[ii].y();
         new_obj.pose.pose.position.z = init_obstacles.positions[ii].z();
