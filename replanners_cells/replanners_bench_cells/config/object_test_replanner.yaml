@@ -9,6 +9,8 @@ object_geometries:
   mid_red_box: {box: [0.6, 0.6, 0.60], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   short_box  : {box: [0.5, 0.5, 0.50], color: [0.75,0.75,0.75,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   big_box    : {box: [0.5, 0.5, 1.00], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
+  big_box1   : {box: [0.1, 0.4, 0.7 ], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
+  big_box2   : {box: [0.5, 0.4, 0.1 ], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   huge_box   : {box: [0.8, 0.8, 3.00], color: [0.75,0.75,0.75,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   plane      : {box: [5.0, 5.0, 0.10], color: [0.75,0.75,0.75,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   table      : {box: [1.4, 1.4, 0.10], color: [0.00,1.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
