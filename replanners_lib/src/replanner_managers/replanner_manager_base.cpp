@@ -947,10 +947,10 @@ void ReplannerManagerBase::spawnObjectsThread()
 
   for (size_t i = 0; i < num_obstacles_; i++)
   {
-        n_move.push_back(0);
-        moving_time.push_back(real_time_);
+    n_move.push_back(0);
+    moving_time.push_back(real_time_);
     velocities.push_back(init_obstacles_.velocities[i]);
-        objects_locations.push_back(init_obstacles_.positions[i]);
+    objects_locations.push_back(init_obstacles_.positions[i]);
   }
 
   geometry_msgs::Quaternion q;
