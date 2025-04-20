@@ -18,11 +18,15 @@ int main(int argc, char **argv)
   ros::NodeHandle nh;
   ros::ServiceClient ps_client = nh.serviceClient<moveit_msgs::GetPlanningScene>("/get_planning_scene");
   ros::ServiceClient add_obj = nh.serviceClient<object_loader_msgs::AddObjects>("/add_object_to_scene");
+  ros::ServiceClient move_obj = nh.serviceClient<object_loader_msgs::MoveObjects>("/move_object_in_scene");
   ros::ServiceClient remove_obj = nh.serviceClient<object_loader_msgs::RemoveObjects>("/remove_object_from_scene");
   ros::Publisher text_overlay_pub = nh.advertise<jsk_rviz_plugins::OverlayText>("/rviz_text_overlay", 1);
 
   object_loader_msgs::AddObjects srv_add_object;
+  object_loader_msgs::MoveObjects srv_move_objects;
   object_loader_msgs::RemoveObjects srv_remove_object;
+  std::vector<object_loader_msgs::Object> spawned_objects;
+  std::vector<std::string> obj_ids;
 
   if (!ps_client.waitForExistence(ros::Duration(10)))
   {
@@ -88,8 +92,13 @@ int main(int argc, char **argv)
   double max_solver_time;
   if (!nh.getParam("max_solver_time",max_solver_time))
   {
-    max_solver_time = 20;
+    max_solver_time = 10;
   }
+
+  std::string obs_pose_topic;
+  if(!nh.getParam("virtual_obj/obs_pose_topic", obs_pose_topic))
+    obs_pose_topic = "/poses";
+  ros::Publisher obj_pose_pub = nh.advertise<geometry_msgs::PoseArray>(obs_pose_topic, 10);
 
   std_msgs::ColorRGBA fg_color, bg_color;
   fg_color.r = 0;
@@ -154,6 +163,82 @@ int main(int argc, char **argv)
     int n_query_start;
     nh.getParam("n_query_start", n_query_start);
 
+    // ------------------------------------------------------------------------------- //
+
+    if (!srv_remove_object.request.obj_ids.empty())
+    {
+      if (not remove_obj.call(srv_remove_object))
+        ROS_ERROR("call to remove obj srv not ok");
+      if(not srv_remove_object.response.success)
+        ROS_ERROR("remove obj srv error");
+    }
+
+    geometry_msgs::Quaternion q;
+    q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
+
+    std::vector<std::string> object_type_vector;
+    nh.getParam("virtual_obj/obj_type", object_type_vector);
+    object_loader_msgs::Object new_obj;
+    new_obj.pose.header.frame_id = "world";
+    new_obj.pose.pose.orientation = q;
+
+    srv_add_object.request.objects.clear();
+    srv_remove_object.request.obj_ids.clear();
+    
+    for (size_t ii = 0; ii < num_obs; ii++)
+    {
+      if (object_type_vector.size() > 1)
+        new_obj.object_type = object_type_vector[ii];
+      else
+        new_obj.object_type = object_type_vector.front();
+      
+      new_obj.pose.pose.position.x = 0;
+      new_obj.pose.pose.position.y = 0;
+      new_obj.pose.pose.position.z = 0;
+      srv_add_object.request.objects.push_back(new_obj);
+      spawned_objects.push_back(new_obj);
+    }
+
+    if(not srv_add_object.request.objects.empty())
+    {
+      if(not add_obj.call(srv_add_object))
+      {
+        ROS_ERROR("call to add obj srv not ok");
+        return 1;
+      }
+
+      if(not srv_add_object.response.success)
+        ROS_ERROR("add obj srv error");
+      else
+      {
+        ROS_BOLDMAGENTA_STREAM("Initial obstacles spawned!");
+        for (const std::string &str : srv_add_object.response.ids)
+        {
+          obj_ids.push_back(str);
+          srv_remove_object.request.obj_ids.push_back(str);
+        }
+      }
+    }
+    
+    geometry_msgs::PoseArray pose_array;
+    pose_array.header.frame_id = "world";
+    pose_array.header.stamp = ros::Time::now();
+
+    geometry_msgs::Pose pose;
+    pose.orientation = q;
+
+    for (size_t ii = 0; ii < num_obs; ii++)
+    {
+      pose.position.x = srv_add_object.request.objects[ii].pose.pose.position.x;
+      pose.position.y = srv_add_object.request.objects[ii].pose.pose.position.y;
+      pose.position.z = srv_add_object.request.objects[ii].pose.pose.position.z;
+      pose_array.poses.push_back(pose);
+    }
+
+    obj_pose_pub.publish(pose_array); //publish poses for SSM node
+
+    // ------------------------------------------------------------------------------- //
+
     for(int i = n_query_start; i < n_query; i++)
     {
       // Nermin added reading from a yaml file:
@@ -181,59 +266,26 @@ int main(int argc, char **argv)
         init_obstacles.dimensions.emplace_back(dim);
         init_obstacles.positions.emplace_back(pos);
         init_obstacles.velocities.emplace_back(Eigen::Vector3d::Zero());
+
+        spawned_objects.at(j).pose.pose.position.x = pos.x();
+        spawned_objects.at(j).pose.pose.position.y = pos.y();
+        spawned_objects.at(j).pose.pose.position.z = pos.z();
+        spawned_objects.at(j).pose.pose.orientation = q;
+
+        srv_move_objects.request.obj_ids.push_back(obj_ids.at(j));
+        srv_move_objects.request.poses.push_back(spawned_objects.at(j).pose);
       }
 
       init_obstacles.max_vel = float(rand()) / RAND_MAX * node["testing"]["max_vel_obs"].as<float>();
       
-      // ------------------------------------------------------------------------------- //
-
-      if (!srv_remove_object.request.obj_ids.empty())
+      if(not srv_move_objects.request.poses.empty())
       {
-        if (not remove_obj.call(srv_remove_object))
-          ROS_ERROR("call to remove obj srv not ok");
-        if(not srv_remove_object.response.success)
-          ROS_ERROR("remove obj srv error");
+        if(not move_obj.call(srv_move_objects))
+          ROS_ERROR("call to move obj srv not ok");
+
+        if(not srv_move_objects.response.success)
+          ROS_ERROR("move obj srv error");
       }
-
-      geometry_msgs::Quaternion q;
-      q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
-
-      srv_add_object.request.objects.clear();
-      srv_remove_object.request.obj_ids.clear();
-
-      std::vector<std::string> object_type_vector;
-      nh.getParam("virtual_obj/obj_type", object_type_vector);
-      object_loader_msgs::Object new_obj;
-      new_obj.pose.header.frame_id = "world";
-      new_obj.pose.pose.orientation = q;
-      for (size_t ii = 0; ii < num_obs; ii++)
-      {
-        if (object_type_vector.size() > 1)
-          new_obj.object_type = object_type_vector[ii];
-        else
-          new_obj.object_type = object_type_vector.front();
-
-        new_obj.pose.pose.position.x = init_obstacles.positions[ii].x();
-        new_obj.pose.pose.position.y = init_obstacles.positions[ii].y();
-        new_obj.pose.pose.position.z = init_obstacles.positions[ii].z();
-        srv_add_object.request.objects.push_back(new_obj);
-      }
-
-      if(not add_obj.call(srv_add_object))
-      {
-        ROS_ERROR("call to add obj srv not ok");
-        return 1;
-      }
-
-      if(not srv_add_object.response.success)
-        ROS_ERROR("add obj srv error");
-      else
-      {
-        ROS_BOLDMAGENTA_STREAM("Initial objects added!");
-        for (const std::string& str : srv_add_object.response.ids)
-          srv_remove_object.request.obj_ids.push_back(str);
-      }
-      // ------------------------------------------------------------------------------- //
 
       //  /////////////////////////////////////UPDATING THE PLANNING STATIC SCENE////////////////////////////////////
       moveit_msgs::GetPlanningScene ps_srv;
@@ -413,13 +465,6 @@ int main(int argc, char **argv)
           return 0;
         }
 
-        // Nermin added:
-        if (not remove_obj.call(srv_remove_object))
-          ROS_ERROR("call to remove obj srv not ok");
-        if(not srv_remove_object.response.success)
-          ROS_ERROR("remove obj srv error");
-        srv_remove_object.request.obj_ids.clear();
-
         // Update planning scene again
         if (!ps_client.call(ps_srv))
         {
@@ -449,11 +494,19 @@ int main(int argc, char **argv)
         // //////////////////////////////REPLANNING///////////////////////////////////////////////////
         replanner_manager->setInitObstacles(init_obstacles);
         replanner_manager->setInitDurationOffset(init_duration_offset);
+        replanner_manager->setObjIds(obj_ids);
+        replanner_manager->setSpawnedObjects(spawned_objects);
         replanner_manager->start();
 
         //std::system("clear"); //clear terminal
       }
     }
+
+    if (not remove_obj.call(srv_remove_object))
+      ROS_ERROR("call to remove obj srv not ok");
+    if(not srv_remove_object.response.success)
+      ROS_ERROR("remove obj srv error");
+
   }
 
   return 0;

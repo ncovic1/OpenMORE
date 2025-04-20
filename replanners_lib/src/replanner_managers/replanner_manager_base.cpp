@@ -214,8 +214,6 @@ void ReplannerManagerBase::attributeInitialization()
   initReplanner();
   replanner_->setVerbosity(replanner_verbosity_);
 
-  obj_ids_.clear();
-
   new_joint_state_.position                 = pnt_.positions                  ;
   new_joint_state_.velocity                 = pnt_.velocities                 ;
   new_joint_state_.name                     = joint_names                     ;
@@ -686,7 +684,6 @@ bool ReplannerManagerBase::run()
   spinner.start();
 
   attributeInitialization();
-  addObjects();
 
   target_pub_         .publish(new_joint_state_         );
   unscaled_target_pub_.publish(new_joint_state_unscaled_);
@@ -928,99 +925,33 @@ void ReplannerManagerBase::displayThread()
   ROS_BOLDCYAN_STREAM("Display thread is over");
 }
 
-void ReplannerManagerBase::addObjects()
+void ReplannerManagerBase::spawnObjectsThread()
 {
   num_obstacles_ = spawn_instants_.size();
   ROS_INFO("Num of obstacles: %ld", num_obstacles_);
 
-  geometry_msgs::Quaternion q;
-  q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
+  const Eigen::Vector3d WS_center = Eigen::Vector3d(0.0, 0.0, 0.267);
+  const double WS_radius = 1.5;
+  const double robot_max_vel = 3.14159;
+  const double base_radius = 0.047;
+  const float path_len_max = 0.2;
+  Eigen::VectorXi sign = Eigen::VectorXi::Ones(num_obstacles_);
+  Eigen::VectorXd path_len = Eigen::VectorXd::Zero(num_obstacles_);
+  bool obs_update;
 
-  object_loader_msgs::Object new_obj;
-  new_obj.pose.header.frame_id = "world";
-  new_obj.pose.pose.orientation = q;
+  std::vector<unsigned int> n_move;
+  std::vector<double> moving_time;
+  std::vector<Eigen::Vector3d> velocities;
+  std::vector<Eigen::Vector3d> objects_locations;
+  object_loader_msgs::MoveObjects srv_move_objects;
 
   for (size_t i = 0; i < num_obstacles_; i++)
   {
-    srv_add_object.request.objects.clear();
-
-    if (obj_type_.size() > 1)
-      new_obj.object_type = obj_type_[i];
-    else
-      new_obj.object_type = obj_type_.front();
-    
-    new_obj.pose.pose.position.x = init_obstacles_.positions[i].x();
-    new_obj.pose.pose.position.y = init_obstacles_.positions[i].y();
-    new_obj.pose.pose.position.z = init_obstacles_.positions[i].z();
-
-    srv_add_object.request.objects.push_back(new_obj);
-
-    if(not srv_add_object.request.objects.empty())
-    {
-      if(not add_obj_.call(srv_add_object))
-      {
-        ROS_ERROR("call to add obj srv not ok");
-
-        stop_ = true;
-        break;
-      }
-
-      if(not srv_add_object.response.success)
-        ROS_ERROR("add obj srv error");
-      else
-      {
-        ROS_BOLDMAGENTA_STREAM("Obstacle spawned!");
         n_move.push_back(0);
-        velocities.push_back(init_obstacles_.velocities[i]);
         moving_time.push_back(real_time_);
-        spawned_objects.push_back(new_obj);
+    velocities.push_back(init_obstacles_.velocities[i]);
         objects_locations.push_back(init_obstacles_.positions[i]);
-        ids.push_back(srv_add_object.response.ids.front());
-
-        for (const std::string& str:srv_add_object.response.ids)
-          srv_remove_object.request.obj_ids.push_back(str);
-      }
-
-      geometry_msgs::PoseArray pose_array;
-      pose_array.header.frame_id = "world";
-      pose_array.header.stamp = ros::Time::now();
-
-      geometry_msgs::Pose pose;
-      pose.orientation = q;
-
-      bench_mtx_.lock();
-      obj_ids_ = ids;  //also contains the new added obj
-
-      obj_pos_.clear();
-      for(const Eigen::Vector3d &ol: objects_locations) //also contains the new added obj
-      {
-        Eigen::VectorXd vector = ol.head<3>();
-        obj_pos_.push_back(vector);
-
-        pose.position.x = ol[0];
-        pose.position.y = ol[1];
-        pose.position.z = ol[2];
-
-        pose_array.poses.push_back(pose);
-      }
-      bench_mtx_.unlock();
-
-      obj_pose_pub_.publish(pose_array); //publish poses for SSM node
-    }
-    ros::Duration(0.01).sleep();
   }
-}
-
-void ReplannerManagerBase::spawnObjectsThread()
-{
-  Eigen::Vector3d WS_center = Eigen::Vector3d(0.0, 0.0, 0.267);
-  double WS_radius = 1.5;
-  double robot_max_vel = 3.14159;
-  double base_radius = 0.047;
-  Eigen::VectorXi sign = Eigen::VectorXi::Ones(num_obstacles_);
-  Eigen::VectorXd path_len = Eigen::VectorXd::Zero(num_obstacles_);
-  const float path_len_max { 0.2 };
-  bool obs_update;
 
   geometry_msgs::Quaternion q;
   q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
@@ -1102,16 +1033,16 @@ void ReplannerManagerBase::spawnObjectsThread()
 
         // -------------------------------------------------------------------------------------------------------- //
 
-        spawned_objects.at(i).pose.pose.position.x = objects_locations.at(i)[0];
-        spawned_objects.at(i).pose.pose.position.y = objects_locations.at(i)[1];
-        spawned_objects.at(i).pose.pose.position.z = objects_locations.at(i)[2];
-        spawned_objects.at(i).pose.pose.orientation = q;
+        spawned_objects_.at(i).pose.pose.position.x = objects_locations.at(i)[0];
+        spawned_objects_.at(i).pose.pose.position.y = objects_locations.at(i)[1];
+        spawned_objects_.at(i).pose.pose.position.z = objects_locations.at(i)[2];
+        spawned_objects_.at(i).pose.pose.orientation = q;
 
         n_move.at(i) = n_move.at(i)+1;
         moving_time.at(i) = real_time_;
 
-        srv_move_objects.request.obj_ids.push_back(ids.at(i));
-        srv_move_objects.request.poses.push_back(spawned_objects.at(i).pose);
+        srv_move_objects.request.obj_ids.push_back(obj_ids_.at(i));
+        srv_move_objects.request.poses.push_back(spawned_objects_.at(i).pose);
       }
 
       if(stop_ || not ros::ok())
@@ -1139,8 +1070,6 @@ void ReplannerManagerBase::spawnObjectsThread()
       pose.orientation = q;
 
       bench_mtx_.lock();
-      obj_ids_ = ids;  //also contains the new added obj
-
       obj_pos_.clear();
       for(const Eigen::Vector3d& ol: objects_locations) //also contains the new added obj
       {
@@ -1159,11 +1088,6 @@ void ReplannerManagerBase::spawnObjectsThread()
     }
     lp.sleep();
   }
-
-  if (not remove_obj_.call(srv_remove_object))
-    ROS_ERROR("call to remove obj srv not ok");
-  if(not srv_remove_object.response.success)
-    ROS_ERROR("remove obj srv error");
 
   ROS_BOLDCYAN_STREAM("Spawn objects thread is over");
 }

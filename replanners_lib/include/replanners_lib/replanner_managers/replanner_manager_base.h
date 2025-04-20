@@ -105,20 +105,11 @@ protected:
   moveit_msgs::PlanningScene                planning_scene_diff_msg_     ;
   moveit_msgs::PlanningScene                planning_scene_msg_benchmark_;
 
-  std::vector<std::string> ids;
-  std::vector<double> moving_time;
-  std::vector<unsigned int> n_move;
-  std::vector<Eigen::Vector3d> velocities;
-  std::vector<Eigen::Vector3d> objects_locations;
-  std::vector<object_loader_msgs::Object> spawned_objects;
-  object_loader_msgs::AddObjects srv_add_object;
-  object_loader_msgs::MoveObjects srv_move_objects;
-  object_loader_msgs::RemoveObjects srv_remove_object;
-
   std::vector<std::string> obj_type_   ;
   std::vector<double> spawn_instants_  ;
   std::vector<std::string> obj_ids_    ;
   std::vector<Eigen::VectorXd> obj_pos_;
+  std::vector<object_loader_msgs::Object> spawned_objects_;
 
   std::thread display_thread_   ;
   std::thread trj_exec_thread_  ;
@@ -166,7 +157,6 @@ protected:
   virtual void collisionCheckThread();
   virtual void displayThread();
   virtual void benchmarkThread();
-  virtual void addObjects();
   virtual void spawnObjectsThread();
   virtual void trajectoryExecutionThread();
   virtual double readScalingTopics();
@@ -264,12 +254,22 @@ public:
     init_duration_offset_ = init_duration_offset;
   }
 
+  void setObjIds(const std::vector<std::string> &obj_ids)
+  {
+    obj_ids_ = obj_ids;
+  }
+
+  void setSpawnedObjects(const std::vector<object_loader_msgs::Object> &spawned_objects)
+  {
+    spawned_objects_ = spawned_objects;
+  }
+
   virtual bool joinThreads();
   virtual bool stop();
   virtual bool run();
   virtual bool start();
 
-  virtual void startReplannedPathFromNewCurrentConf(const Eigen::VectorXd& configuration) = 0;
+  virtual void startReplannedPathFromNewCurrentConf(const Eigen::VectorXd &configuration) = 0;
 };
 
 }
