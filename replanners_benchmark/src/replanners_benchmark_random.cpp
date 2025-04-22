@@ -166,16 +166,10 @@ int main(int argc, char **argv)
 
       int n_query_start;
       nh.getParam("n_query_start", n_query_start);
+      if (num_obs != num_obstacles.front())
+        n_query_start = 0;
 
       // ------------------------------------------------------------------------------- //
-
-      if (!srv_remove_object.request.obj_ids.empty())
-      {
-        if (not remove_obj.call(srv_remove_object))
-          ROS_ERROR("call to remove obj srv not ok");
-        if(not srv_remove_object.response.success)
-          ROS_ERROR("remove obj srv error");
-      }
 
       geometry_msgs::Quaternion q;
       q.x = 0.0; q.y = 0.0; q.z = 0.0; q.w = 1.0;
@@ -187,6 +181,8 @@ int main(int argc, char **argv)
 
       srv_add_object.request.objects.clear();
       srv_remove_object.request.obj_ids.clear();
+      obj_ids.clear();
+      spawned_objects.clear();
       
       for (size_t ii = 0; ii < num_obs; ii++)
       {
