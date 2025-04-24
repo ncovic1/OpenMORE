@@ -1033,6 +1033,24 @@ void ReplannerManagerBase::spawnObjectsThread()
 
         // -------------------------------------------------------------------------------------------------------- //
 
+        // Nermin added. Jaws motion (for scenario 3) 
+        // ROS_INFO("Moving obstacle: %ld", i);
+        // if (path_len(i) > path_len_max)
+        // {
+        //   sign(i) *= -1;
+        //   path_len(i) = -path_len_max;
+        // }
+        
+        // if (objects_locations.at(i).x() > 0)
+        //   velocities.at(i) = Eigen::Vector3d::UnitX() * sign(i) * init_obstacles_.max_vel;     // Move along x-axis
+        // else
+        //   velocities.at(i) = -Eigen::Vector3d::UnitX() * sign(i) * init_obstacles_.max_vel;     // Move along y-axis
+
+        // path_len(i) += velocities.at(i).norm() * delta_time;
+        // objects_locations.at(i) += velocities.at(i) * delta_time;
+
+        // -------------------------------------------------------------------------------------------------------- //
+
         spawned_objects_.at(i).pose.pose.position.x = objects_locations.at(i)[0];
         spawned_objects_.at(i).pose.pose.position.y = objects_locations.at(i)[1];
         spawned_objects_.at(i).pose.pose.position.z = objects_locations.at(i)[2];
