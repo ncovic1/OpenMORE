@@ -152,8 +152,8 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < 3; i++) {	// This depends on how deep is this file located
     project_path = project_path.substr(0, project_path.find_last_of("/\\"));
 	}
-  YAML::Node node { YAML::LoadFile(project_path + "/replanners_benchmark/config/random_scenarios.yaml") };
-	std::cout << "Random scenarios file path: " << project_path + "/replanners_benchmark/config/random_scenarios.yaml" << "\n";
+  YAML::Node node { YAML::LoadFile(project_path + "/replanners_benchmark/config/random_scenarios_spatial_22dof.yaml") };
+	std::cout << "Random scenarios file path: " << project_path + "/replanners_benchmark/config/random_scenarios_spatial_22dof.yaml" << "\n";
 
   for(const std::string replanner_type : replanner_type_vector)
   {

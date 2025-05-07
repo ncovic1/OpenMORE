@@ -1,7 +1,8 @@
 object_geometries:
   sphere02   : {sphere: 0.2, color: [1,0.0,0.0,0.5], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   sphere     : {sphere: 0.1, color: [1,0.0,0.0,0.5], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
-  random_box : {box: [0.01, 0.01, 0.01], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
+  # random_box : {box: [0.05, 0.05, 0.05], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
+  random_box : {box: [0.4, 0.4, 0.4 ], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   red_box    : {box: [0.2, 0.2, 0.45], color: [1.00,0.00,0.00,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   box        : {box: [0.2, 0.2, 0.45], color: [0.75,0.75,0.75,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
   little_box : {box: [0.1, 0.1, 0.10], color: [0.75,0.75,0.75,1], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}

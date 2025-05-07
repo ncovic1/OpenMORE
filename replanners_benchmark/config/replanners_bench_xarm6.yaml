@@ -37,7 +37,7 @@ virtual_obj:
   obj_type: ["random_box"]
   # obj_type: ["big_box","big_box","big_box","big_box"]
   # obj_type: ["big_box1","big_box1","big_box1","big_box1", "big_box2","big_box2","big_box2","big_box2"]
-  max_ws_dist: 0.25
+  max_ws_dist: 10
   dt_move: 0.005
   obs_pose_topic: "/poses"
 

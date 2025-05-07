@@ -2,10 +2,11 @@
 n_query_start: 0
 n_query: 1000
 n_iter_per_query: 1
-bench_name: "10d"
+bench_name: "22d"
+num_obstacles: [5]
 
 #PLANNING CONFIGURATIONS:
-group_name: "spatial_10dof"
+group_name: "spatial_22dof"
 utopia_tolerance: 0.01
 extend: false
 max_distance: 0.1
@@ -33,8 +34,8 @@ joint_target_topic: "/joint_target"
 unscaled_joint_target_topic: "/unscaled_joint_target"
 virtual_obj:
   spawn_objs: true
-  obj_type: ["big_box"]
-  max_ws_dist: 10
+  obj_type: ["random_box"]
+  max_ws_dist: 0.3
   dt_move: 0.005
   obs_pose_topic: "/poses"
 

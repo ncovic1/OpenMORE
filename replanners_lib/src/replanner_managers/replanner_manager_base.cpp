@@ -935,6 +935,7 @@ void ReplannerManagerBase::spawnObjectsThread()
   const double robot_max_vel = 3.14159;
   const double base_radius = 0.047;
   const float path_len_max = 0.2;
+  // const float path_len_max = init_obstacles_.dimensions.front().x() / 2;
   Eigen::VectorXi sign = Eigen::VectorXi::Ones(num_obstacles_);
   Eigen::VectorXd path_len = Eigen::VectorXd::Zero(num_obstacles_);
   bool obs_update;
@@ -1003,7 +1004,7 @@ void ReplannerManagerBase::spawnObjectsThread()
 
         // -------------------------------------------------------------------------------------------------------- //
 
-        // Nermin added. Circular motion (for scenario 1) 
+        // Nermin added. Circular motion (for scenario 1 & 3) 
         // ROS_INFO("Moving obstacle: %ld", i);
         // float radius = objects_locations.at(i).head(2).norm();
         // float delta_phi = init_obstacles_.max_vel / radius * delta_time;
@@ -1225,11 +1226,11 @@ void ReplannerManagerBase::benchmarkThread()
 
     for(unsigned int i = 0; i < obj_pos.size(); i++)
     {
-      if((current_configuration_3d - obj_pos[i]).norm() < max_ws_dist_)
-      {
-        it = std::find(already_collided_obj.begin(),already_collided_obj.end(),obj_ids[i]);
-        if(it>=already_collided_obj.end())
-        {
+      // if((current_configuration_3d - obj_pos[i]).norm() < max_ws_dist_)
+      // {
+      //   it = std::find(already_collided_obj.begin(),already_collided_obj.end(),obj_ids[i]);
+      //   if(it>=already_collided_obj.end())
+      //   {
           scene_mtx_.lock();
           checker->setPlanningSceneMsg(planning_scene_msg_benchmark_);
           scene_mtx_.unlock();
@@ -1252,8 +1253,8 @@ void ReplannerManagerBase::benchmarkThread()
 
             break;
           }
-        }
-      }
+      //   }
+      // }
     }
 
     toc = ros::WallTime::now();

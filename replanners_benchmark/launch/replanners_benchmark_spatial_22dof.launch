@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-  <include file="$(find replanners_bench_cells)/launch/load_cell_spatial_10dof.launch"/>
+  <include file="$(find replanners_bench_cells)/launch/load_cell_spatial_22dof.launch"/>
 
   <rosparam command="load" file="$(find replanners_benchmark)/config/spatial_Ndof.yaml"/>
 
