@@ -1,0 +1,33 @@
+environment:
+  - box:
+      dim: [0.1, 0.4, 0.7]
+      pos: [-0.3, 0.8, 0.35]
+  - box:
+      dim: [0.1, 0.4, 0.7]
+      pos: [0.3, 0.8, 0.35]
+  - box:
+      dim: [0.1, 0.4, 0.7]
+      pos: [-0.3, -0.8, 0.35]
+  - box:
+      dim: [0.1, 0.4, 0.7]
+      pos: [0.3, -0.8, 0.35]
+  - box:
+      dim: [0.5, 0.4, 0.1]
+      pos: [0, 0.8, 0.65]
+  - box:
+      dim: [0.5, 0.4, 0.1]
+      pos: [0, 0.8, 0.05]
+  - box:
+      dim: [0.5, 0.4, 0.1]
+      pos: [0, -0.8, 0.65]
+  - box:
+      dim: [0.5, 0.4, 0.1]
+      pos: [0, -0.8, 0.05]
+
+robot:
+  start: [1.5708, 1.3849, -2.9557, 1.5708, 0, 0]
+  goal:  [-1.5708, 1.3849, -2.9557, 1.5708, 0, 0]
+  
+testing:
+  max_num: 1000                                               # Maximal number of tests that should be carried out
+  max_vel_obs: 0.3                                            # Maximal velocity for each obstacle from "environment"

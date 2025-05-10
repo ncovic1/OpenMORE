@@ -63,7 +63,7 @@ protected:
   double t_                          ;
   double dt_                         ;
   double real_time_                  ;
-  double obj_max_size_               ;
+  double max_ws_dist_                ;
   double time_shift_                 ;
   double t_replan_                   ;
   double replanning_time_            ;
@@ -75,7 +75,15 @@ protected:
   double global_override_            ;
   double obj_vel_                    ;
   double dt_move_                    ;
+  double max_solver_time_            ;                // Nermin added
+  double init_duration_offset_       ;                // Nermin added
+  double max_vel_recorded_;                           // Nermin added
+  double max_acc_recorded_;                           // Nermin added
+  std::vector<double> previous_vel_;                  // Nermin added
+  unsigned int num_obstacles_;                        // Nermin added
 
+  ros::WallTime tic_alg_;				// Nermin added
+  ros::WallTime tic_obj_;				// Nermin added
   ros::WallTime tic_trj_;
 
   ReplannerBasePtr                          replanner_                   ;
@@ -97,10 +105,11 @@ protected:
   moveit_msgs::PlanningScene                planning_scene_diff_msg_     ;
   moveit_msgs::PlanningScene                planning_scene_msg_benchmark_;
 
-  std::string obj_type_                ;
+  std::vector<std::string> obj_type_   ;
   std::vector<double> spawn_instants_  ;
   std::vector<std::string> obj_ids_    ;
   std::vector<Eigen::VectorXd> obj_pos_;
+  std::vector<object_loader_msgs::Object> spawned_objects_;
 
   std::thread display_thread_   ;
   std::thread trj_exec_thread_  ;
@@ -226,12 +235,41 @@ public:
     return goal_reached_;
   }
 
+  struct InitObstacles
+  {
+    std::vector<Eigen::Vector3d> positions;
+    std::vector<Eigen::Vector3d> dimensions;
+    std::vector<Eigen::Vector3d> velocities;
+    float max_vel;
+  } 
+  init_obstacles_;    // Nermin added
+
+  void setInitObstacles(const InitObstacles &init_obstacles)
+  {
+    init_obstacles_ = init_obstacles;
+  }
+
+  void setInitDurationOffset(double init_duration_offset)
+  {
+    init_duration_offset_ = init_duration_offset;
+  }
+
+  void setObjIds(const std::vector<std::string> &obj_ids)
+  {
+    obj_ids_ = obj_ids;
+  }
+
+  void setSpawnedObjects(const std::vector<object_loader_msgs::Object> &spawned_objects)
+  {
+    spawned_objects_ = spawned_objects;
+  }
+
   virtual bool joinThreads();
   virtual bool stop();
   virtual bool run();
   virtual bool start();
 
-  virtual void startReplannedPathFromNewCurrentConf(const Eigen::VectorXd& configuration) = 0;
+  virtual void startReplannedPathFromNewCurrentConf(const Eigen::VectorXd &configuration) = 0;
 };
 
 }

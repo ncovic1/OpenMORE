@@ -4,6 +4,7 @@ add_compile_options(-std=c++17 -funroll-loops -Wall -Ofast)
 set(CMAKE_BUILD_TYPE Release)
 #set(CMAKE_BUILD_TYPE Debug)
 
+find_package(yaml-cpp REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   replanners_lib
 )
@@ -19,6 +20,8 @@ include_directories(
 
 add_executable(replanners_benchmark src/replanners_benchmark.cpp)
 add_dependencies(replanners_benchmark ${catkin_EXPORTED_TARGETS})
-target_link_libraries(replanners_benchmark
-${catkin_LIBRARIES}
-)
+target_link_libraries(replanners_benchmark ${catkin_LIBRARIES} yaml-cpp)
+
+add_executable(replanners_benchmark_random src/replanners_benchmark_random.cpp)
+add_dependencies(replanners_benchmark_random ${catkin_EXPORTED_TARGETS})
+target_link_libraries(replanners_benchmark_random ${catkin_LIBRARIES} yaml-cpp)
